@@ -1,0 +1,25 @@
+// To switch to SQLite: change provider to "sqlite" and DATABASE_URL to "file:./dev.db"
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Part {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name              String
+  category          String
+  currentStock      Int
+  minimumStock      Int
+  averageDailySales Float
+  leadTimeDays      Int
+  unitCost          Float
+  criticalityLevel  Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([category])
+}
