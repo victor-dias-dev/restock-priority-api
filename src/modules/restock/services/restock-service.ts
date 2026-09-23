@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { calculateRestockPriorities, PriorityResult } from 'restock-priority';
 import { IPartsRepository, PARTS_REPOSITORY } from '../../parts/interfaces/parts-interface';
-import { calculateRestockPriorities, PriorityResult } from '../domain/priority-calculator';
 
 @Injectable()
 export class RestockService {
@@ -10,7 +10,7 @@ export class RestockService {
   ) {}
 
   async getPriorities(): Promise<{ priorities: PriorityResult[] }> {
-    const parts = await this.partsRepository.findAll();
+    const parts = await this.partsRepository.findAllUnpaged();
     const priorities = calculateRestockPriorities(parts);
     return { priorities };
   }

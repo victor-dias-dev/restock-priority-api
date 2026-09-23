@@ -1,4 +1,3 @@
-// To switch to SQLite: change provider to "sqlite" and DATABASE_URL to "file:./dev.db"
 generator client {
   provider = "prisma-client-js"
 }
