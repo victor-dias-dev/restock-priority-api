@@ -1,23 +1,36 @@
 # restock-priority
 
-[Português](README.pt.md)
+[Português](README.pt-BR.md)
 
 [![CI](https://github.com/victor-dias-dev/test-karhub/actions/workflows/ci.yml/badge.svg)](https://github.com/victor-dias-dev/test-karhub/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/github/license/victor-dias-dev/test-karhub)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Reference HTTP API for stock replenishment prioritization, plus a publishable engine with no framework dependencies.
+Stock replenishment for parts: who to buy first, how many units, and how much money is at risk while the order is in transit.
 
-The ranking rule lives in [`packages/restock-priority`](packages/restock-priority). Criticality decides who jumps the queue. Unit cost is reported as money at risk so a buyer can override that order; it does not change the sort.
+Criticality decides who jumps the queue. Unit cost is reported as money at risk so a buyer can override that order. It does not change the sort. The ranking rule lives in [`packages/restock-priority`](packages/restock-priority) and does not import NestJS or Prisma.
+
+![API](docs/screenshots/api.png)
+![Priorities](docs/screenshots/priorities.png)
+![Parts](docs/screenshots/parts.png)
+
+## What is in the app
+
+- Parts: create, list, fetch, update, and delete
+- Paginated `GET /parts` (`page`, `limit` up to 100, optional `category`)
+- `GET /restock/priorities` for every part that falls below its minimum during the lead time
+- Suggested order quantity, days until stockout, and money at risk
+- `GET /health` against PostgreSQL
+- OpenAPI at `/docs`
 
 ## Requirements
 
-- Node.js >= 20
-- npm 10
-- PostgreSQL 16
+- Node.js 20+
+- npm 10+
+- Docker and Docker Compose
 
-The schema uses `gen_random_uuid()` and `@db.Uuid`. PostgreSQL is a requirement of this API, not a swappable Prisma provider.
+PostgreSQL 16 is required. The schema uses `gen_random_uuid()` and `@db.Uuid`.
 
-## Run locally
+## Quick start
 
 ```bash
 npm install
@@ -27,111 +40,47 @@ npx prisma migrate dev
 npm run start:dev
 ```
 
-The API listens on `http://localhost:3000`. OpenAPI is at `http://localhost:3000/docs`.
+`npm install` builds the engine. The API listens on http://localhost:3000. Swagger: http://localhost:3000/docs. Health: `GET /health`.
 
-`npm install` builds the engine. To run the API and PostgreSQL together:
+To run the API and PostgreSQL together: `docker compose up --build`.
 
-```bash
-docker compose up --build
-```
+The API reads `PORT` and `DATABASE_URL` from the environment. Copy `.env.example` and keep real secrets out of git.
 
-## Tests
+| Variable       | Purpose                          |
+| -------------- | -------------------------------- |
+| `PORT`         | HTTP port. Defaults to `3000`    |
+| `DATABASE_URL` | PostgreSQL connection string     |
+
+## Checks
 
 ```bash
 npm test
-npm run test:cov
 npm run test:e2e
+npm run lint
+npm run build
 ```
 
-End-to-end tests need `DATABASE_URL`. The default in `.env.example` matches the Compose database.
+End-to-end tests need PostgreSQL and `DATABASE_URL`. The value in `.env.example` matches the Compose database. Coverage: `npm run test:cov`.
 
-## Endpoints
+## Repository
 
-### Parts
-
-`POST /parts` creates a part.
-
-```json
-{
-  "name": "Oil Filter X",
-  "category": "engine",
-  "currentStock": 15,
-  "minimumStock": 20,
-  "averageDailySales": 4,
-  "leadTimeDays": 5,
-  "unitCost": 18.5,
-  "criticalityLevel": 3
-}
+```text
+packages/restock-priority   Publishable ranking engine
+src/modules/parts           Parts CRUD
+src/modules/restock         GET /restock/priorities
+src/modules/health          GET /health
 ```
 
-`GET /parts?category=engine&page=1&limit=20` returns a page:
+Expected consumption is `averageDailySales * leadTimeDays`. Projected stock is `currentStock - expectedConsumption`. A part needs replenishment when projected stock is below `minimumStock`.
 
-```json
-{
-  "items": [],
-  "page": 1,
-  "limit": 20,
-  "total": 0
-}
-```
+Urgency score is `(minimumStock - projectedStock) * criticalityLevel`. Suggested order quantity is `ceil(minimumStock - projectedStock)`. Days until stockout is `currentStock / averageDailySales`, or `null` when daily sales are 0. Money at risk is `(minimumStock - projectedStock) * unitCost`.
 
-`limit` defaults to 20 and cannot exceed 100. `GET /parts/:id` and `PUT /parts/:id` use the same fields. `:id` must be a UUID. `DELETE /parts/:id` returns `204` with an empty body.
+Ties break by higher criticality, then higher average daily sales, then name ascending.
 
-### Priorities
+Worked example: stock 15, minimum 20, daily sales 4, lead time 5, unit cost 18.50, criticality 3. Projected stock is -5, the score is 75, the suggested order is 25, days until stockout is 3.75, and money at risk is 462.50.
 
-`GET /restock/priorities` ranks every part that will fall below its minimum during the lead time. The list is not paginated; `GET /parts` is.
+## Contributing
 
-```json
-{
-  "priorities": [
-    {
-      "partId": "uuid",
-      "name": "Oil Filter X",
-      "currentStock": 15,
-      "projectedStock": -5,
-      "minimumStock": 20,
-      "urgencyScore": 75,
-      "suggestedOrderQuantity": 25,
-      "daysUntilStockout": 3.75,
-      "moneyAtRisk": 462.5
-    }
-  ]
-}
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports are described in [SECURITY.md](SECURITY.md).
 
-### Health
-
-`GET /health` returns `200` and `{ "status": "ok" }` when PostgreSQL answers `SELECT 1`. It returns `503` when the database is unreachable.
-
-## Business rules
-
-| Formula | Calculation |
-|---|---|
-| Expected consumption | `averageDailySales * leadTimeDays` |
-| Projected stock | `currentStock - expectedConsumption` |
-| Needs replenishment | `projectedStock < minimumStock` |
-| Urgency score | `(minimumStock - projectedStock) * criticalityLevel` |
-| Suggested order quantity | `ceil(minimumStock - projectedStock)` |
-| Days until stockout | `currentStock / averageDailySales`, or `null` when daily sales are 0 |
-| Money at risk | `(minimumStock - projectedStock) * unitCost` |
-
-Tie breakers, in order: higher `criticalityLevel`, higher `averageDailySales`, then `name` ascending.
-
-Worked example: stock 15, minimum 20, daily sales 4, lead time 5, unit cost 18.50, criticality 3. Expected consumption is 20, projected stock is -5, the score is 75, the suggested order is 25, days until stockout is 3.75, and money at risk is 462.50.
-
-## Layout
-
-```
-packages/restock-priority/   # pure engine, publishable
-src/
-  prisma/                    # PrismaModule
-  common/                    # Zod pipe and OpenAPI helper
-  modules/
-    parts/                   # CRUD
-    restock/                 # GET /restock/priorities
-    health/                  # GET /health
-```
-
-## License
-
-[MIT](LICENSE) © Victor Dias
+Licensed under the [MIT License](LICENSE).
