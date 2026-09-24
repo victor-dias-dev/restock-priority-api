@@ -1,172 +1,86 @@
-# Karhub – Motor de Priorização de Reposição de Estoque
+# restock-priority
 
-Microserviço para gerenciamento e priorização de reposição de peças automotivas.
+[Português](README.pt-BR.md)
 
-## Tecnologias
+[![CI](https://github.com/victor-dias-dev/test-karhub/actions/workflows/ci.yml/badge.svg)](https://github.com/victor-dias-dev/test-karhub/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-- **Node.js** + **TypeScript**
-- **NestJS** – framework HTTP
-- **Prisma** – ORM
-- **PostgreSQL** – banco de dados
-- **Zod** – validação de DTOs
-- **Jest** – testes unitários
+Stock replenishment for parts: who to buy first, how many units, and how much money is at risk while the order is in transit.
 
-## Pré-requisitos
+Criticality decides who jumps the queue. Unit cost is reported as money at risk so a buyer can override that order. It does not change the sort. The ranking rule lives in [`packages/restock-priority`](packages/restock-priority) and does not import NestJS or Prisma.
 
-- Node.js >= 18
-- Docker e Docker Compose
+![API](docs/screenshots/api.png)
+![Priorities](docs/screenshots/priorities.png)
+![Parts](docs/screenshots/parts.png)
 
-## Como rodar localmente
+## What is in the app
 
-### 1. Clone o repositório e instale as dependências
+- Parts: create, list, fetch, update, and delete
+- Paginated `GET /parts` (`page`, `limit` up to 100, optional `category`)
+- `GET /restock/priorities` for every part that falls below its minimum during the lead time
+- Suggested order quantity, days until stockout, and money at risk
+- `GET /health` against PostgreSQL
+- OpenAPI at `/docs`
+
+## Requirements
+
+- Node.js 20+
+- npm 10+
+- Docker and Docker Compose
+
+PostgreSQL 16 is required. The schema uses `gen_random_uuid()` and `@db.Uuid`.
+
+## Quick start
 
 ```bash
 npm install
-```
-
-### 2. Suba o banco de dados
-
-```bash
-docker-compose up -d
-```
-
-### 3. Configure as variáveis de ambiente
-
-```bash
 cp .env.example .env
-```
-
-O arquivo `.env` já vem configurado para o banco local do Docker:
-```
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/karhub"
-```
-
-### 4. Execute as migrations
-
-```bash
-npx prisma migrate dev --name init
-```
-
-### 5. Inicie o servidor
-
-```bash
+docker compose up -d db
+npx prisma migrate dev
 npm run start:dev
 ```
 
-A aplicação estará disponível em `http://localhost:3000`.
+`npm install` builds the engine. The API listens on http://localhost:3000. Swagger: http://localhost:3000/docs. Health: `GET /health`.
 
-## Testes
+To run the API and PostgreSQL together: `docker compose up --build`.
+
+The API reads `PORT` and `DATABASE_URL` from the environment. Copy `.env.example` and keep real secrets out of git.
+
+| Variable       | Purpose                          |
+| -------------- | -------------------------------- |
+| `PORT`         | HTTP port. Defaults to `3000`    |
+| `DATABASE_URL` | PostgreSQL connection string     |
+
+## Checks
 
 ```bash
-npm run test
+npm test
+npm run test:e2e
+npm run lint
+npm run build
 ```
 
-```bash
-npm run test:cov   # com cobertura
+End-to-end tests need PostgreSQL and `DATABASE_URL`. The value in `.env.example` matches the Compose database. Coverage: `npm run test:cov`.
+
+## Repository
+
+```text
+packages/restock-priority   Publishable ranking engine
+src/modules/parts           Parts CRUD
+src/modules/restock         GET /restock/priorities
+src/modules/health          GET /health
 ```
 
-## Endpoints
+Expected consumption is `averageDailySales * leadTimeDays`. Projected stock is `currentStock - expectedConsumption`. A part needs replenishment when projected stock is below `minimumStock`.
 
-### Peças – CRUD
+Urgency score is `(minimumStock - projectedStock) * criticalityLevel`. Suggested order quantity is `ceil(minimumStock - projectedStock)`. Days until stockout is `currentStock / averageDailySales`, or `null` when daily sales are 0. Money at risk is `(minimumStock - projectedStock) * unitCost`.
 
-#### Criar peça
-```http
-POST /parts
-Content-Type: application/json
+Ties break by higher criticality, then higher average daily sales, then name ascending.
 
-{
-  "name": "Filtro de Óleo X",
-  "category": "engine",
-  "currentStock": 15,
-  "minimumStock": 20,
-  "averageDailySales": 4,
-  "leadTimeDays": 5,
-  "unitCost": 18.50,
-  "criticalityLevel": 3
-}
-```
+Worked example: stock 15, minimum 20, daily sales 4, lead time 5, unit cost 18.50, criticality 3. Projected stock is -5, the score is 75, the suggested order is 25, days until stockout is 3.75, and money at risk is 462.50.
 
-#### Listar peças
-```http
-GET /parts
-GET /parts?category=engine
-```
+## Contributing
 
-#### Buscar peça por ID
-```http
-GET /parts/:id
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports are described in [SECURITY.md](SECURITY.md).
 
-#### Atualizar peça
-```http
-PUT /parts/:id
-Content-Type: application/json
-
-{
-  "currentStock": 30
-}
-```
-
-#### Remover peça
-```http
-DELETE /parts/:id
-```
-
-### Priorização
-
-```http
-GET /restock/priorities
-```
-
-Resposta:
-```json
-{
-  "priorities": [
-    {
-      "partId": "uuid-1",
-      "name": "Filtro de Óleo X",
-      "currentStock": 15,
-      "projectedStock": -5,
-      "minimumStock": 20,
-      "urgencyScore": 75
-    }
-  ]
-}
-```
-
-## Regras de Negócio
-
-| Fórmula | Cálculo |
-|---|---|
-| Consumo esperado | `averageDailySales x leadTimeDays` |
-| Estoque projetado | `currentStock - expectedConsumption` |
-| Necessidade de reposição | `projectedStock < minimumStock` |
-| Score de urgência | `(minimumStock - projectedStock) x criticalityLevel` |
-
-**Critérios de desempate** (quando `urgencyScore` é igual):
-1. Maior `criticalityLevel`
-2. Maior `averageDailySales`
-3. Ordem alfabética pelo nome
-
-## Arquitetura
-
-```
-src/
-├── prisma/                  # PrismaModule global
-├── common/pipes/            # ZodValidationPipe
-└── modules/
-    ├── parts/
-    │   ├── controllers/     # HTTP layer
-    │   ├── services/        # Regras de negócio CRUD
-    │   ├── repositories/    # Abstração de banco (IPartsRepository)
-    │   ├── domain/          # Entidade Part
-    │   └── dto/             # Schemas Zod
-    └── restock/
-        ├── controllers/     # GET /restock/priorities
-        ├── services/        # Orquestração
-        └── domain/          # calculateRestockPriorities (função pura)
-```
-
-O cálculo de priorização é uma **função pura** (`priority-calculator.ts`) sem dependências do NestJS, tornando-o trivialmente testável e reutilizável.
-
-Para trocar o banco de dados, basta alterar o `provider` no `prisma/schema.prisma` e o `useClass` no `PartsModule` — nenhuma alteração nos services ou controllers.
+Licensed under the [MIT License](LICENSE).

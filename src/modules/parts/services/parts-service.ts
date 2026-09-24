@@ -1,5 +1,10 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { IPartsRepository, PARTS_REPOSITORY } from '../interfaces/parts-interface';
+import {
+  IPartsRepository,
+  ListPartsQuery,
+  PaginatedParts,
+  PARTS_REPOSITORY,
+} from '../interfaces/parts-interface';
 import { Part } from '../domain/part-entity';
 import { CreatePartDto } from '../dto/create-part-dto';
 import { UpdatePartDto } from '../dto/update-part-dto';
@@ -15,8 +20,8 @@ export class PartsService {
     return this.partsRepository.create(dto);
   }
 
-  async findAll(category?: string): Promise<Part[]> {
-    return this.partsRepository.findAll(category);
+  async findAll(query: ListPartsQuery): Promise<PaginatedParts> {
+    return this.partsRepository.findAll(query);
   }
 
   async findById(id: string): Promise<Part> {

@@ -1,0 +1,27 @@
+{
+  "name": "restock-priority",
+  "version": "1.0.0",
+  "description": "Pure prioritization engine for stock replenishment",
+  "author": "Victor Dias <vitorlirio@hotmail.com>",
+  "license": "MIT",
+  "private": false,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/victor-dias-dev/test-karhub.git",
+    "directory": "packages/restock-priority"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "jest --config jest.config.cjs"
+  }
+}

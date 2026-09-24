@@ -6,33 +6,28 @@ import {
   HttpCode,
   HttpStatus,
   Param,
+  ParseUUIDPipe,
   Post,
   Put,
   Query,
   UsePipes,
 } from '@nestjs/common';
+import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { PartsService } from '../services/parts-service';
 import { ZodValidationPipe } from '../../../common/pipes/zod-validation.pipe';
+import { zodToOpenApiSchema } from '../../../common/openapi/zod-openapi';
 import { CreatePartSchema, CreatePartDto } from '../dto/create-part-dto';
 import { UpdatePartSchema, UpdatePartDto } from '../dto/update-part-dto';
-import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse } from '@nestjs/swagger';
+import { ListPartsQuerySchema, ListPartsQueryDto } from '../dto/list-parts-query-dto';
 
 @Controller('parts')
 export class PartsController {
   constructor(private readonly partsService: PartsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Adicionar peça' })
-  @ApiBody({ schema: { type: 'object', properties: {
-    name: { type: 'string' },
-    category: { type: 'string' },
-    currentStock: { type: 'number' },
-    minimumStock: { type: 'number' },
-    averageDailySales: { type: 'number' },
-    leadTimeDays: { type: 'number' },
-    unitCost: { type: 'number' },
-    criticalityLevel: { type: 'number' } } } })
-  @ApiResponse({ status: 201, description: 'Peça adicionada' })
+  @ApiOperation({ summary: 'Create a part' })
+  @ApiBody({ schema: zodToOpenApiSchema(CreatePartSchema) })
+  @ApiResponse({ status: 201, description: 'Part created' })
   @HttpCode(HttpStatus.CREATED)
   @UsePipes(new (ZodValidationPipe(CreatePartSchema))())
   create(@Body() dto: CreatePartDto) {
@@ -40,53 +35,52 @@ export class PartsController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Listar peças' })
+  @ApiOperation({ summary: 'List parts' })
   @ApiQuery({ name: 'category', required: false })
-  @ApiResponse({ status: 200, description: 'Lista de peças' })
-  findAll(@Query('category') category?: string) {
-    return this.partsService.findAll(category);
+  @ApiQuery({
+    name: 'page',
+    required: false,
+    schema: { type: 'integer', default: 1, minimum: 1 },
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    schema: { type: 'integer', default: 20, minimum: 1, maximum: 100 },
+  })
+  @ApiResponse({ status: 200, description: 'Page of parts' })
+  findAll(@Query(new (ZodValidationPipe(ListPartsQuerySchema))()) query: ListPartsQueryDto) {
+    return this.partsService.findAll(query);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Buscar peça por ID' })
-  @ApiParam({ name: 'id' })
-  @ApiResponse({ status: 200, description: 'Peça encontrada' })
-  findById(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Get a part by id' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Part found' })
+  @ApiResponse({ status: 400, description: 'Invalid UUID' })
+  @ApiResponse({ status: 404, description: 'Part not found' })
+  findById(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.partsService.findById(id);
   }
 
   @Put(':id')
-  @ApiOperation({ summary: 'Atualizar peça' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string' },
-        category: { type: 'string' },
-        currentStock: { type: 'number' },
-        minimumStock: { type: 'number' },
-        averageDailySales: { type: 'number' },
-        leadTimeDays: { type: 'number' },
-        unitCost: { type: 'number' },
-        criticalityLevel: { type: 'number' },
-      },
-    },
-  })
-  @ApiResponse({ status: 200, description: 'Peça atualizada' })
+  @ApiOperation({ summary: 'Update a part' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiBody({ schema: zodToOpenApiSchema(UpdatePartSchema) })
+  @ApiResponse({ status: 200, description: 'Part updated' })
   @HttpCode(HttpStatus.OK)
   update(
-    @Param('id') id: string,
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Body(new (ZodValidationPipe(UpdatePartSchema))()) dto: UpdatePartDto,
   ) {
     return this.partsService.update(id, dto);
   }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Remover peça' })
-  @ApiParam({ name: 'id' })
-  @ApiResponse({ status: 200, description: 'Peça removida' })
-  @HttpCode(HttpStatus.OK)
-  delete(@Param('id') id: string) {
+  @ApiOperation({ summary: 'Delete a part' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 204, description: 'Part deleted' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  delete(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.partsService.delete(id);
   }
 }
